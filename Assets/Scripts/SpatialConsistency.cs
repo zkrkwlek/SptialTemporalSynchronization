@@ -221,8 +221,8 @@ public class SpatialConsistency : MonoBehaviour
                 //writer_uvr.WriteLine(dist + "," + azi + "," + ele + "," + dist1);
                 //writer_google.WriteLine(dist + "," + azi + "," + ele + "," + dist2);
                 //마커의 불도 변화는지 확인
-                mText.text = "azi = " + azi + " ele = " + ele+" dist = "+dist;
-                mText.text += "\n dist = " + dist1 + " " + dist2 + " " + marker.mbCreate;
+                //mText.text = "azi = " + azi + " ele = " + ele+" dist = "+dist;
+                //mText.text += "\n dist = " + dist1 + " " + dist2 + " " + marker.mbCreate;
                     
                 //mText.text = "ray = " + ", " + proj2D.magnitude;
 
