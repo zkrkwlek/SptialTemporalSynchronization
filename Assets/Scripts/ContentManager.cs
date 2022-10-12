@@ -3,6 +3,8 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.XR.ARFoundation;
+using UnityEngine.XR.ARSubsystems;
 
 public class Path
 {
@@ -21,21 +23,48 @@ public class Path
 public class Content
 {
     public int mnContentID;
-    public Vector3 position;
+    //public Vector3 position;
     public GameObject obj;
     public Material material;
     public int nTTL;
     public bool visible;
+    public PathManager pathManager;
 
-    public Content(int id, float x, float y, float z, int _TTL)
+    public Content(int id, int mid, Vector3 _pos, int _TTL)
     {
         mnContentID = id;
-        position = new Vector3(x, y, z);
+        //position = new Vector3(x, y, z);
         obj = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        obj.transform.localScale = new Vector3(0.05f, 0.05f, 0.05f);
-        obj.transform.position = position;
+        obj.transform.position = _pos;
         material = obj.GetComponent<Renderer>().material;
-        material.color = Color.blue;
+
+        pathManager = obj.AddComponent<PathManager>();
+        pathManager.contentID = id;
+        
+        //pathManager.gameObject.AddComponent<CapsuleCollider>();
+        //obj.GetComponent<CapsuleCollider>().isTrigger = true;
+
+        ////충돌을 감지하기 위해서는 최소 움직이는 객체에는 리지드 바디와 콜라이더가 추가되어야함.
+        ////키네메틱이 꺼져있는 상태여야 함.
+
+        var col = obj.GetComponent<SphereCollider>();
+        col.isTrigger = false; //충돌시 반응하지 않도록 설정.
+
+        if (mid > 0)
+        {
+            obj.transform.localScale = new Vector3(0.02f, 0.02f, 0.02f);
+            pathManager.currPathID = mid;
+            obj.tag = "Path";
+            material.color = Color.green;
+        }
+        else {
+            obj.transform.localScale = new Vector3(0.05f, 0.05f, 0.05f);
+            obj.tag = "VO";
+            material.color = Color.blue;
+            var body = obj.AddComponent<Rigidbody>();
+            body.isKinematic = false;
+            body.useGravity = false;
+        }
 
         //float fAngle = rot.magnitude * Mathf.Rad2Deg;
         //Quaternion q = Quaternion.AngleAxis(fAngle, rot.normalized);
@@ -120,19 +149,41 @@ public class ContentManager : MonoBehaviour
         
     }
 
-
     // Start is called before the first frame update
-    void Start()
+    void Awake()
     {
         ContentDictionary = new Dictionary<int, Content>();
         MapContentMarker = new Dictionary<int, int>();
         PathDictionary = new Dictionary<int, Path>();
         //enabled = false;
+
+        arSession = FindObjectOfType<ARSession>(); // todo cache or assign reference via Inspector
+        XRSessionSubsystem xrSessionSubsystem = arSession.subsystem;
+        if (xrSessionSubsystem != null)
+        {
+            trackingState = xrSessionSubsystem.trackingState;
+        }
     }
+
+    ARSession arSession;
+    XRSessionSubsystem xrSessionSubsystem;
+    TrackingState trackingState;
 
     // Update is called once per frame
     void Update()
     {
+        arSession = FindObjectOfType<ARSession>(); // todo cache or assign reference via Inspector
+        xrSessionSubsystem = arSession.subsystem;
+        if (xrSessionSubsystem != null)
+        {
+            trackingState = xrSessionSubsystem.trackingState;
+            //if (trackingState == TrackingState.Limited)
+            //    mText.text = "Tracking.Limited";
+            //if (trackingState == TrackingState.Tracking) {
+            //    mText.text = "Tracking.Tracking";
+            //}
+        }
+
         foreach (int id in ContentDictionary.Keys)
         {
 
@@ -143,18 +194,16 @@ public class ContentManager : MonoBehaviour
             }
         }
     }
-
+    
     public bool CheckContent(int id)
     {
         return ContentDictionary.ContainsKey(id);
     }
     int ttl = 6;
-    void RegistContent(int id, float x, float y, float z)
+    void RegistContent(int id, int mid, Vector3 pos)
     {
-        var newContent = new Content(id, x, y, z, ttl);
-        newContent.obj.AddComponent<PathManager>();
+        var newContent = new Content(id, mid, pos, ttl);
         ContentDictionary.Add(id, newContent);
-        
     }
     void UpdateContent(int id, Vector3 pos)
     {
@@ -162,7 +211,7 @@ public class ContentManager : MonoBehaviour
         var c = ContentDictionary[id];
         var pathManager = c.obj.GetComponent<PathManager>();
         c.nTTL = ttl;
-        if(!pathManager.mbPath || !pathManager.mbMoving)
+        if(pathManager.mObjState == ObjectState.None)
             c.obj.transform.position = Vector3.Lerp(c.obj.transform.position, pos, Time.deltaTime);
         c.obj.SetActive(true);
 
@@ -180,10 +229,20 @@ public class ContentManager : MonoBehaviour
     {
         try
         {
+
+            if (trackingState != TrackingState.Tracking)
+            {
+                return;
+            }
+
+            //서버에서 전송한 3차원 포즈를 현재 시스템이 좌표계로 변환함.
             var pos = new Vector3(x, y, z);
             pos = UVR.transform.worldToLocalMatrix.MultiplyPoint(pos);
             pos.y *= -1f;
             pos = Camera.main.transform.localToWorldMatrix.MultiplyPoint(pos);
+
+            ////가상 객체 등록 체크.
+            ////마커인지 아닌지도 알려줌
 
             if (CheckContent(contentid))
             {
@@ -191,42 +250,73 @@ public class ContentManager : MonoBehaviour
             }
             else
             {
-                RegistContent(contentid, pos.x, pos.y, pos.z);
-                if (markerid > 0)
+                RegistContent(contentid, markerid, pos);
+
+                ////여기가 패스매니저의 스타트보다 빠르기 때문에 awake가 필요할 듯.
+                if(markerid > 0)
                 {
-                    MapContentMarker[markerid] = contentid; //무조건 마커랑 컨텐츠를 연결하게 되어 있음.
+                    MapContentMarker[markerid] = contentid;
+                    var currContent = ContentDictionary[contentid];
                     int prevMarkerId = markerid - 1;
                     int nextMarkerId = markerid + 1;
-                    var currContent = ContentDictionary[contentid];
-                    //var currPathManager = ContentDictionary[contentid].obj.GetComponent<PathManager>();
-
-                    if (CheckPath(prevMarkerId))
-                    {
+                    
+                    if (CheckPath(prevMarkerId)) {
                         int prevContentID = MapContentMarker[prevMarkerId];
                         var prevContent = ContentDictionary[prevContentID];
-                        prevContent.obj.AddComponent<CapsuleCollider>();
-                        prevContent.material.color = Color.red;
-                        prevContent.obj.tag = "Path";
-                        prevContent.obj.name = "Pathprev";
-                        var pathManager = prevContent.obj.GetComponent<PathManager>();
-                        pathManager.mbPath = true;
-                        pathManager.nextPathObject = currContent.obj;
-                        //pathManager.Init(prevContentID, prevMarkerId, contentid);
+
+                        prevContent.material.color = Color.cyan;
+                        currContent.material.color = Color.red;
+
+                        //prevContent.pathManager.mbPath = true;
+                        prevContent.pathManager.CreatePath(currContent.obj);
+
                     }
-                    if (CheckPath(nextMarkerId))
-                    {
+                    if (CheckPath(nextMarkerId)) {
                         int nextContentID = MapContentMarker[nextMarkerId];
                         var nextContent = ContentDictionary[nextContentID];
-                        var col = currContent.obj.AddComponent<CapsuleCollider>();
-                        currContent.material.color = Color.red;
-                        currContent.obj.tag = "Path";
-                        currContent.obj.name = "Pathcurr";
-                        var pathManager = currContent.obj.GetComponent<PathManager>();
-                        pathManager.mbPath = true;
-                        pathManager.nextPathObject = nextContent.obj;
-                        //pathManager.Init(contentid, markerid, nextContentID);
+
+                        currContent.material.color = Color.black;
+                        nextContent.material.color = Color.yellow;
+
+                        //currContent.pathManager.mbPath = true;
+                        currContent.pathManager.CreatePath(nextContent.obj);
+
                     }
                 }
+
+                //if (markerid > 0)
+                //{
+                //    MapContentMarker[markerid] = contentid; //무조건 마커랑 컨텐츠를 연결하게 되어 있음.
+                //    int prevMarkerId = markerid - 1;
+                //    int nextMarkerId = markerid + 1;
+                //    var currContent = ContentDictionary[contentid];
+
+                //    if (CheckPath(prevMarkerId))
+                //    {
+                //        int prevContentID = MapContentMarker[prevMarkerId];
+                //        var prevContent = ContentDictionary[prevContentID];
+                        
+                //        prevContent.material.color = Color.red;
+                //        prevContent.obj.name = "Pathprev";
+                //        var pathManager = prevContent.obj.GetComponent<PathManager>();
+                //        //pathManager.mbPath = true;
+                //        pathManager.nextPathObject = currContent.obj;
+                //        //pathManager.Init(prevContentID, prevMarkerId, contentid);
+                //    }
+                //    if (CheckPath(nextMarkerId))
+                //    {
+                //        int nextContentID = MapContentMarker[nextMarkerId];
+                //        var nextContent = ContentDictionary[nextContentID];
+                //        //var col = currContent.obj.AddComponent<CapsuleCollider>();
+                //        currContent.material.color = Color.red;
+                //        currContent.obj.name = "Pathcurr";
+                //        var pathManager = currContent.obj.GetComponent<PathManager>();
+                //        //pathManager.mbPath = true;
+                //        pathManager.nextPathObject = nextContent.obj;
+                //        //pathManager.Init(contentid, markerid, nextContentID);
+                //    }
+                //}
+
                 //if (markerid > 0 && !MapContentMarker.ContainsKey(markerid))
                 //{
                 //    MapContentMarker[markerid] = contentid;
@@ -264,7 +354,7 @@ public class ContentManager : MonoBehaviour
                 //}
             }
             //mText.text = "marker cotent = " + markerid + " " + id;
-            ContentDictionary[contentid].position = new Vector3(x, y, z);
+            //ContentDictionary[contentid].position = new Vector3(x, y, z);
             ContentRegistrationEvent.RunEvent(new ContentEventArgs(ContentDictionary[contentid]));
         }
         catch(Exception e)
@@ -272,7 +362,16 @@ public class ContentManager : MonoBehaviour
             mText.text = "Content Process " + e.ToString();
         }
     }
-    
+
+    public void Move(int id)
+    {
+        if (ContentDictionary.ContainsKey(id))
+        {
+            var content = ContentDictionary[id];
+            content.pathManager.MoveStart();
+        }
+    }
+
     bool CheckPath(int mid)
     {
         return MapContentMarker.ContainsKey(mid);
