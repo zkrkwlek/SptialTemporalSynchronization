@@ -14,6 +14,31 @@ using UnityEngine.UI;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 
+public class MarkerDetectEventArgs2 : EventArgs
+{
+    public MarkerDetectEventArgs2(int _frameid,float[] data, Vector3 _pos)
+    {
+        mnFrameID = _frameid;
+        marker_data = data;
+        pos = _pos;
+    }
+    public int mnFrameID { get; set; }
+    public float[] marker_data { get; set; }
+    public Vector3 pos { get; set; }
+}
+
+class MarkerDetectEvent2
+{
+    public static event EventHandler<MarkerDetectEventArgs2> markerDetected;
+    public static void RunEvent(MarkerDetectEventArgs2 e)
+    {
+        if (markerDetected != null)
+        {
+            markerDetected(null, e);
+        }
+    }
+}
+
 public class MarkerDetectEventArgs : EventArgs
 {
     public MarkerDetectEventArgs(ArucoMarker m) 
@@ -65,12 +90,15 @@ public class ArucoMarker{
     public ARGameObject gameobject; //필터링용. 이것은 azi, ele로 위치 측정할 때 이용
     public Matrix4x4 ARM;
     public bool mbCreate;
+    public int nUpdated;
     public ArucoMarker(){ 
         corners = new List<Vector2>();
         mbCreate = false;
+        nUpdated = 0;
     }
     public ArucoMarker(int _id)
     {
+        nUpdated = 0;
         id = _id;
         corners = new List<Vector2>();
         mbCreate = false;
@@ -101,22 +129,24 @@ public class ArucoMarker{
         tempMat = fitHelpersFlipMatrix * tempMat;
         tempMat = cam.transform.localToWorldMatrix * tempMat;
         gameobject.SetMatrix4x4(tempMat);
+        nUpdated++;
     }
 
     public void CreateOrigin(float markerLength, Matrix4x4 fitARFoundationBackgroundMatrix, Matrix4x4 fitHelpersFlipMatrix, GameObject cam)
     {
-        Matrix4x4 obj = Matrix4x4.identity;
-        obj.SetColumn(3, new Vector4(-markerLength / 2, -markerLength / 2, 0.0f, 1.0f));
-        ARM = fitARFoundationBackgroundMatrix * ARM * obj;
-        ARM = fitHelpersFlipMatrix * ARM;
-        ARM = cam.transform.localToWorldMatrix * ARM;
+        //Matrix4x4 obj = Matrix4x4.identity;
+        //obj.SetColumn(3, new Vector4(-markerLength / 2, -markerLength / 2, 0.0f, 1.0f));
+        //ARM = fitARFoundationBackgroundMatrix * ARM * obj;
+        //ARM = fitHelpersFlipMatrix * ARM;
+        //ARM = cam.transform.localToWorldMatrix * ARM;
         
-        this.origin = new Vector3(ARM.m03, ARM.m13, ARM.m23);
+        //this.origin = new Vector3(ARM.m03, ARM.m13, ARM.m23);
+        
         //marker.gameobject.SetMatrix4x4(ARM);
-        //this.origin = this.gameobject.transform.position;
+        this.origin = this.gameobject.transform.position;
     }
 
-    public void CalculateAziAndEleAndDist(GameObject cam, out float azi, out float ele, out float dist) {
+    public void CalculateAziAndEleAndDist(Vector3 center, out float azi, out float ele, out float dist) {
         //Matrix4x4 obj = Matrix4x4.identity;
         //obj.SetColumn(3, new Vector4(-markerLength / 2, -markerLength / 2, 0.0f, 1.0f));
         //ARM = fitARFoundationBackgroundMatrix * ARM * obj;
@@ -124,7 +154,7 @@ public class ArucoMarker{
         //ARM = cam.transform.localToWorldMatrix * ARM;
         //gameobject.SetMatrix4x4(ARM);
 
-        Vector3 dir = cam.transform.position - gameobject.transform.position;
+        Vector3 dir = center - gameobject.transform.position;
         dir.z *= -1f;
         
         azi = Mathf.Rad2Deg*Mathf.Atan2(dir.z, dir.x);
@@ -176,54 +206,7 @@ public class ArucoMarkerDetector : MonoBehaviour
     float widthScale;
     float heightScale;
     int mnFrameID;
-
-    public ArucoMarker GetMarker(int id)
-    {
-        return mDictMarkers[id];
-    }
-
-    public float Calculate(Vector3 pos)
-    {
-        //float diff = Mathf.Infinity;
-        //if (corners.Count > 0)
-        //{
-        //    try
-        //    {
-        //        var a = arCamera.transform.worldToLocalMatrix.MultiplyPoint3x4(pos);
-        //        a = mCamManager.fitHelpersFlipMatrix.inverse.MultiplyPoint3x4(a);
-        //        a = mCamManager.fitARFoundationBackgroundMatrix.inverse.MultiplyPoint3x4(a);
-        //        Mat aMat = new Mat(3, 1, CvType.CV_64FC1);
-        //        aMat.put(0, 0, a.x);
-        //        aMat.put(1, 0, -a.y);
-        //        aMat.put(2, 0, a.z);
-        //        Mat proj = mCamManager.camMatrix * aMat;
-
-        //        double depth = proj.get(2, 0)[0];
-        //        float x = ((float)(proj.get(0, 0)[0] / depth));
-        //        float y = ((float)(proj.get(1, 0)[0] / depth));
-        //        Vector2 pt1 = new Vector2(x, y);
-        //        Vector2 pt2 = new Vector2((float)corners[0].get(0, 0)[0], (float)corners[0].get(0, 0)[1]);
-        //        var diffPt = pt1 - pt2;
-        //        diff = diffPt.magnitude;
-
-        //    }
-        //    catch (Exception e)
-        //    {
-        //        mText.text = e.ToString();
-        //    }
-        //}
-
-        //return diff;
-        return 0f;
-
-
-        //    Vector3 pt = corner3Ds[0];
-        //    //pt.y *= -1f;
-
-        //Imgproc.circle(rgbMat, new Point(x, y), 5, new Scalar(255, 0, 255), -1);
-        //    mText.text = imgPt + ", " + corners[0].get(0, 0)[0] + " " + corners[0].get(0, 0)[1]+ " = " +(imgPt.y+ corners[0].get(0, 0)[1]);
-    }
-
+    
     bool WantsToQuit()
     {
         rgbMat.Dispose();
@@ -293,6 +276,8 @@ public class ArucoMarkerDetector : MonoBehaviour
 
             if(ids.total() > 0)
             {
+                float[] fdata = new float[ids.total()*3+1];
+                fdata[0] = (float)ids.total();
                 Aruco.estimatePoseSingleMarkers(corners, markerLength, camMatrix, distCoeffs, rvecs, tvecs);
                 for (int i = 0; i < ids.total(); i++)
                 {
@@ -325,8 +310,19 @@ public class ArucoMarkerDetector : MonoBehaviour
                     Mat rvec = new Mat(rvecs, new OpenCVForUnity.CoreModule.Rect(0, i, 1, 1));
                     Mat tvec = new Mat(tvecs, new OpenCVForUnity.CoreModule.Rect(0, i, 1, 1));
                     marker.ARM = UpdateARObjectTransform(rvec, tvec);
-                    marker.UpdateObject(0.18f, fitARFoundationBackgroundMatrix, fitHelpersFlipMatrix, Camera.main.gameObject);
+                    //가상 객체의 변환된 3차원 위치를 필터링으로 기록함.
+                    marker.UpdateObject(markerLength, fitARFoundationBackgroundMatrix, fitHelpersFlipMatrix, Camera.main.gameObject);
                     MarkerDetectEvent.RunEvent(new MarkerDetectEventArgs(marker));
+
+                    ////데이터에 기록
+                    fdata[i * 3 + 1] = (float)id;
+                    fdata[i * 3 + 2] = marker.corners[0].x;
+                    fdata[i * 3 + 3] = marker.corners[0].y;
+
+                }//for
+                ////마커랑 포즈 모음 이벤트 생성
+                {
+                    MarkerDetectEvent2.RunEvent(new MarkerDetectEventArgs2(mnFrameID,fdata, Camera.main.transform.position));
                 }
             }
         }

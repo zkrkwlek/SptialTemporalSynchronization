@@ -65,12 +65,32 @@ public class DataReceiver : MonoBehaviour
 
     void Awake()
     {
+        testDict = new Dictionary<int, MarkerDetectEventArgs2>();
     }
-
-    // Start is called before the first frame update
-    void Start()
+    void OnEnable()
     {
         UdpAsyncHandler.Instance.UdpDataReceived += Process;
+        //추후 삭제
+        MarkerDetectEvent2.markerDetected += OnMarkerInteraction2;
+    }
+    void OnDisable()
+    {
+        UdpAsyncHandler.Instance.UdpDataReceived -= Process;
+        //추후 삭제
+        MarkerDetectEvent2.markerDetected -= OnMarkerInteraction2;
+    }
+
+    Dictionary<int, MarkerDetectEventArgs2> testDict;
+    //추후 삭제
+    void OnMarkerInteraction2(object sender, MarkerDetectEventArgs2 e)
+    {
+        testDict.Add(e.mnFrameID, e);
+    }
+
+        // Start is called before the first frame update
+    void Start()
+    {
+        
     }
     void Process(object sender, UdpEventArgs e) {
         try {
@@ -143,6 +163,8 @@ public class DataReceiver : MonoBehaviour
                 UVR.transform.position = new Vector3(t.x, t.y, t.z);
                 UVR.transform.rotation = Pinv.rotation;
 
+                //스파셜 컨시스텐시 이벤트를 생성.
+            
                 //mText.text = Pinv.ToString() + UVR.transform.localToWorldMatrix.ToString();
                 //mText.text = P.ToString()+Pinv.ToString() + UVR.transform.position.ToString();
 
@@ -256,159 +278,198 @@ public class DataReceiver : MonoBehaviour
 
             }
         }
-        //if (data.keyword == "ReferenceFrame")
-        //{
+        if (data.keyword == "MarkerDist") //나중에 키워드 변경
+        {
+            UnityWebRequest req1;
+            req1 = GetRequest(data.keyword, data.id);
+            DateTime t1 = DateTime.Now;
+            yield return req1.SendWebRequest();
 
-        //    UnityWebRequest req1;
-        //    req1 = GetRequest(data.keyword, data.id);
-        //    DateTime t1 = DateTime.Now;
-        //    yield return req1.SendWebRequest();
-        //    //1~12까지가 포즈 정보임.
-        //    if (req1.result == UnityWebRequest.Result.Success)
-        //    {
-        //        int N = 12;
-        //        float[] fdata = new float[N * 4];
-        //        Buffer.BlockCopy(req1.downloadHandler.data, 4, fdata, 0, N * 4);
-        //        //StatusTxt.text = data.keyword + "=" + fdata[0] + ", " + req1.downloadHandler.data.Length;
-        //        mScaleAdjuster.SetServerPose(data.id, ref fdata);
-        //        mScaleAdjuster.CalculateScale(data.id);
-        //    }
-        //}
-        //else if (data.keyword == "LocalContent")
-        //{
-        //    UnityWebRequest req1;
-        //    req1 = GetRequest(data.keyword, data.id);
-        //    DateTime t1 = DateTime.Now;
-        //    yield return req1.SendWebRequest();
-        //    //1~12까지가 포즈 정보임.
-        //    if (req1.result == UnityWebRequest.Result.Success)
-        //    {
-        //        try {
-        //            float[] fdata = new float[req1.downloadHandler.data.Length / 4];
-        //            Buffer.BlockCopy(req1.downloadHandler.data, 0, fdata, 0, req1.downloadHandler.data.Length);
-        //            if(mScaleAdjuster.mbScaleAdjustment)
-        //                mContentManager.UpdateContents(ref fdata, mScaleAdjuster.Tlg);
-        //        }
-        //        catch(Exception e)
-        //        {
-        //            StatusTxt.text = e.ToString();
-        //        }
-        //    }
-        //}
+            if (req1.result == UnityWebRequest.Result.Success)
+            {
+                float[] fdata = new float[req1.downloadHandler.data.Length / 4];
+                Buffer.BlockCopy(req1.downloadHandler.data, 0, fdata, 0, req1.downloadHandler.data.Length);
+                //프레임아이디, 데이터 내부에 마커아이디, 디스턴스가 기록
+                float mid = fdata[0];
+                float dist = fdata[1];
+
+                //어딘가에서 카메라 데이터 받아오면 여기서 이벤트 생성 가능함.
+                //이벤트를 생성해야 하는데, 여기에서
+                SpatialEvent.RunEvent(new SpatialEventArgs(testDict[data.id].pos, dist)); 
+            }
+        }
+
+        if (data.keyword == "VO.MOVE") //나중에 키워드 변경
+        {
+            UnityWebRequest req1;
+            req1 = GetRequest(data.keyword, data.id);
+            DateTime t1 = DateTime.Now;
+            mContentManager.Move(data.id);
+            yield return null;
+        }
 
 
 
 
-        ////try
-        ////{
-        //if (data.keyword == "LocalContent")
-        //{
-        //    UnityWebRequest req1;
-        //    req1 = GetRequest(data.keyword, data.id);
-        //    DateTime t1 = DateTime.Now;
-        //    yield return req1.SendWebRequest();
 
 
-        //    if (req1.result == UnityWebRequest.Result.Success)
-        //    {
-        //        float[] fdata = new float[req1.downloadHandler.data.Length / 4];
-        //        Buffer.BlockCopy(req1.downloadHandler.data, 0, fdata, 0, req1.downloadHandler.data.Length);
-
-        //        ////가상 객체 등록
-        //        //int N = (int)fdata[0];
-        //        //int idx = 1;
-        //        //for(int i = 0; i < N; i++)
-        //        //{
-        //        //    int id = (int)fdata[i*4+1];
-        //        //    if (!cids.Contains(id))
-        //        //    {
-        //        //        cids.Add(id);
-        //        //        Vector3 pos = new Vector3(fdata[i*4+2], -fdata[i * 4 + 3], fdata[i * 4 + 4]);
-        //        //        Vector3 rot = new Vector3(0.0f, 0.0f, 0.0f);
-        //        //        GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        //        //        go.transform.localScale = new Vector3(0.05f, 0.05f, 0.05f);
-        //        //        float fAngle = rot.magnitude * Mathf.Rad2Deg;
-        //        //        Quaternion q = Quaternion.AngleAxis(fAngle, rot.normalized);
-        //        //        go.transform.SetPositionAndRotation(pos, q);
-        //        //    }
-        //        //}
-        //        ////가상 객체 등록
-
-        //        //int idx = 1 + (N - 1) * 4;
-        //        //int cid = (int)fdata[idx++];
-        //        //StatusTxt.text = "\t\t\t\t\t" + cid + " " + N+", "+idx+" "+fdata.Length;
-        //        //Vector3 pos = new Vector3(fdata[idx++], fdata[idx++], fdata[idx++]);
-        //        ////Vector3 rot = new Vector3(rdata[nIDX++], rdata[nIDX++], rdata[nIDX++]);
-        //        //Vector3 rot = new Vector3(0.0f, 0.0f, 0.0f);
-        //        //string contentname = "CO" + cid;
-        //        //var co = GameObject.Find(contentname);
-        //        //if (co)
-        //        //{
-        //        //    StatusTxt.text = "\t\t\t\t already Create " + contentname + co.transform.position.x + " " + co.transform.position.y + " " + co.transform.position.z + "::" + pos.x + " " + pos.y + " " + pos.z;
-        //        //}
-        //        //else
-        //        //{
-        //        //    //StatusTxt.text = "\t\t\t\t Create " + contentname + "::" + pos.x + " " + pos.y + " " + pos.z;
-        //        //    GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        //        //    go.transform.localScale = new Vector3(0.01f, 0.01f, 0.01f);
-        //        //    float fAngle = rot.magnitude * Mathf.Rad2Deg;
-        //        //    Quaternion q = Quaternion.AngleAxis(fAngle, rot.normalized);
-        //        //    go.transform.SetPositionAndRotation(pos, q);
-        //        //    go.name = data.type2 + (int)data.ts;
-        //        //    //StatusTxt.text = "\t\t\t Create asdfasdf aaaaaaa " + pos.ToString() + Camera.main.transform.position.ToString()+" "+fdata[0];
-        //        //}
-
-        //        //시각화
-
-        //        //AddContentInfo(data.id, fdata[0], fdata[1], fdata[2]);
 
 
-        //        //if (data.type2 == SystemManager.Instance.User.UserName)
-        //        //{
-        //        //    ////update 시간
-        //        //    int id = (int)data.ts;
-        //        //    //StatusTxt.text = "\t\t\t\t\t asdfasdfasdfasdfasdfasdfasdf = " +id;
-        //        //    UdpData data2 = DataQueue.Instance.Get("ContentGeneration" + id);
-        //        //    TimeSpan time2 = data.receivedTime - data2.sendedTime;
-        //        //    SystemManager.Instance.Experiments["Content"].Update("latency", (float)time2.Milliseconds);
-        //        //}
-        //    }
 
 
-        //}
-        //else {
-        //    //if (data.keyword == "ReferenceFrame")
-        //    //{
-        //    //    ////update 시간
-        //    //    UdpData data2 = DataQueue.Instance.Get("Image" + data.id);
-        //    //    TimeSpan time2 = data.receivedTime - data2.sendedTime;
-        //    //    SystemManager.Instance.Experiments["ReferenceFrame"].Update("latency", (float)time2.Milliseconds);
-        //    //    //StatusTxt.text = "\t\t\t\t\t Reference = " + time2.TotalMilliseconds;
-        //    //    ////update 시간
+                //if (data.keyword == "ReferenceFrame")
+                //{
 
-        //    //}
-        //    //else if (data.keyword == "VO.Registration")
-        //    //{
-        //    //    //수행
-        //    //}
-        //    //else if (data.keyword == "ObjectDetection")
-        //    //{
-        //    //    UdpData data2 = DataQueue.Instance.Get("Image" + data.id);
-        //    //    TimeSpan time2 = data.receivedTime - data2.sendedTime;
-        //    //    SystemManager.Instance.Experiments["ObjectDetection"].Update("latency", (float)time2.Milliseconds);
-        //    //    //SystemManager.Instance.Experiments["ObjectDetection"].Update("traffic", n1);
-        //    //    //SystemManager.Instance.Experiments["ObjectDetection"].Update("download", (float)Dtimespan.Milliseconds);
+                //    UnityWebRequest req1;
+                //    req1 = GetRequest(data.keyword, data.id);
+                //    DateTime t1 = DateTime.Now;
+                //    yield return req1.SendWebRequest();
+                //    //1~12까지가 포즈 정보임.
+                //    if (req1.result == UnityWebRequest.Result.Success)
+                //    {
+                //        int N = 12;
+                //        float[] fdata = new float[N * 4];
+                //        Buffer.BlockCopy(req1.downloadHandler.data, 4, fdata, 0, N * 4);
+                //        //StatusTxt.text = data.keyword + "=" + fdata[0] + ", " + req1.downloadHandler.data.Length;
+                //        mScaleAdjuster.SetServerPose(data.id, ref fdata);
+                //        mScaleAdjuster.CalculateScale(data.id);
+                //    }
+                //}
+                //else if (data.keyword == "LocalContent")
+                //{
+                //    UnityWebRequest req1;
+                //    req1 = GetRequest(data.keyword, data.id);
+                //    DateTime t1 = DateTime.Now;
+                //    yield return req1.SendWebRequest();
+                //    //1~12까지가 포즈 정보임.
+                //    if (req1.result == UnityWebRequest.Result.Success)
+                //    {
+                //        try {
+                //            float[] fdata = new float[req1.downloadHandler.data.Length / 4];
+                //            Buffer.BlockCopy(req1.downloadHandler.data, 0, fdata, 0, req1.downloadHandler.data.Length);
+                //            if(mScaleAdjuster.mbScaleAdjustment)
+                //                mContentManager.UpdateContents(ref fdata, mScaleAdjuster.Tlg);
+                //        }
+                //        catch(Exception e)
+                //        {
+                //            StatusTxt.text = e.ToString();
+                //        }
+                //    }
+                //}
 
-        //    //}
-        //    //else if (data.keyword == "Segmentation")
-        //    //{
-        //    //    UdpData data2 = DataQueue.Instance.Get("Image" + data.id);
-        //    //    TimeSpan time2 = data.receivedTime - data2.sendedTime;
-        //    //    SystemManager.Instance.Experiments["Segmentation"].Update("latency", (float)time2.Milliseconds);
-        //    //}
-        //}
 
-        yield break;
+
+
+                ////try
+                ////{
+                //if (data.keyword == "LocalContent")
+                //{
+                //    UnityWebRequest req1;
+                //    req1 = GetRequest(data.keyword, data.id);
+                //    DateTime t1 = DateTime.Now;
+                //    yield return req1.SendWebRequest();
+
+
+                //    if (req1.result == UnityWebRequest.Result.Success)
+                //    {
+                //        float[] fdata = new float[req1.downloadHandler.data.Length / 4];
+                //        Buffer.BlockCopy(req1.downloadHandler.data, 0, fdata, 0, req1.downloadHandler.data.Length);
+
+                //        ////가상 객체 등록
+                //        //int N = (int)fdata[0];
+                //        //int idx = 1;
+                //        //for(int i = 0; i < N; i++)
+                //        //{
+                //        //    int id = (int)fdata[i*4+1];
+                //        //    if (!cids.Contains(id))
+                //        //    {
+                //        //        cids.Add(id);
+                //        //        Vector3 pos = new Vector3(fdata[i*4+2], -fdata[i * 4 + 3], fdata[i * 4 + 4]);
+                //        //        Vector3 rot = new Vector3(0.0f, 0.0f, 0.0f);
+                //        //        GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                //        //        go.transform.localScale = new Vector3(0.05f, 0.05f, 0.05f);
+                //        //        float fAngle = rot.magnitude * Mathf.Rad2Deg;
+                //        //        Quaternion q = Quaternion.AngleAxis(fAngle, rot.normalized);
+                //        //        go.transform.SetPositionAndRotation(pos, q);
+                //        //    }
+                //        //}
+                //        ////가상 객체 등록
+
+                //        //int idx = 1 + (N - 1) * 4;
+                //        //int cid = (int)fdata[idx++];
+                //        //StatusTxt.text = "\t\t\t\t\t" + cid + " " + N+", "+idx+" "+fdata.Length;
+                //        //Vector3 pos = new Vector3(fdata[idx++], fdata[idx++], fdata[idx++]);
+                //        ////Vector3 rot = new Vector3(rdata[nIDX++], rdata[nIDX++], rdata[nIDX++]);
+                //        //Vector3 rot = new Vector3(0.0f, 0.0f, 0.0f);
+                //        //string contentname = "CO" + cid;
+                //        //var co = GameObject.Find(contentname);
+                //        //if (co)
+                //        //{
+                //        //    StatusTxt.text = "\t\t\t\t already Create " + contentname + co.transform.position.x + " " + co.transform.position.y + " " + co.transform.position.z + "::" + pos.x + " " + pos.y + " " + pos.z;
+                //        //}
+                //        //else
+                //        //{
+                //        //    //StatusTxt.text = "\t\t\t\t Create " + contentname + "::" + pos.x + " " + pos.y + " " + pos.z;
+                //        //    GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                //        //    go.transform.localScale = new Vector3(0.01f, 0.01f, 0.01f);
+                //        //    float fAngle = rot.magnitude * Mathf.Rad2Deg;
+                //        //    Quaternion q = Quaternion.AngleAxis(fAngle, rot.normalized);
+                //        //    go.transform.SetPositionAndRotation(pos, q);
+                //        //    go.name = data.type2 + (int)data.ts;
+                //        //    //StatusTxt.text = "\t\t\t Create asdfasdf aaaaaaa " + pos.ToString() + Camera.main.transform.position.ToString()+" "+fdata[0];
+                //        //}
+
+                //        //시각화
+
+                //        //AddContentInfo(data.id, fdata[0], fdata[1], fdata[2]);
+
+
+                //        //if (data.type2 == SystemManager.Instance.User.UserName)
+                //        //{
+                //        //    ////update 시간
+                //        //    int id = (int)data.ts;
+                //        //    //StatusTxt.text = "\t\t\t\t\t asdfasdfasdfasdfasdfasdfasdf = " +id;
+                //        //    UdpData data2 = DataQueue.Instance.Get("ContentGeneration" + id);
+                //        //    TimeSpan time2 = data.receivedTime - data2.sendedTime;
+                //        //    SystemManager.Instance.Experiments["Content"].Update("latency", (float)time2.Milliseconds);
+                //        //}
+                //    }
+
+
+                //}
+                //else {
+                //    //if (data.keyword == "ReferenceFrame")
+                //    //{
+                //    //    ////update 시간
+                //    //    UdpData data2 = DataQueue.Instance.Get("Image" + data.id);
+                //    //    TimeSpan time2 = data.receivedTime - data2.sendedTime;
+                //    //    SystemManager.Instance.Experiments["ReferenceFrame"].Update("latency", (float)time2.Milliseconds);
+                //    //    //StatusTxt.text = "\t\t\t\t\t Reference = " + time2.TotalMilliseconds;
+                //    //    ////update 시간
+
+                //    //}
+                //    //else if (data.keyword == "VO.Registration")
+                //    //{
+                //    //    //수행
+                //    //}
+                //    //else if (data.keyword == "ObjectDetection")
+                //    //{
+                //    //    UdpData data2 = DataQueue.Instance.Get("Image" + data.id);
+                //    //    TimeSpan time2 = data.receivedTime - data2.sendedTime;
+                //    //    SystemManager.Instance.Experiments["ObjectDetection"].Update("latency", (float)time2.Milliseconds);
+                //    //    //SystemManager.Instance.Experiments["ObjectDetection"].Update("traffic", n1);
+                //    //    //SystemManager.Instance.Experiments["ObjectDetection"].Update("download", (float)Dtimespan.Milliseconds);
+
+                //    //}
+                //    //else if (data.keyword == "Segmentation")
+                //    //{
+                //    //    UdpData data2 = DataQueue.Instance.Get("Image" + data.id);
+                //    //    TimeSpan time2 = data.receivedTime - data2.sendedTime;
+                //    //    SystemManager.Instance.Experiments["Segmentation"].Update("latency", (float)time2.Milliseconds);
+                //    //}
+                //}
+
+                yield break;
     }
 
     

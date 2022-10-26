@@ -8,13 +8,27 @@ using System.IO;
 using UnityEngine;
 using UnityEngine.UI;
 
-public class ExData
+public class SpatialEventArgs : EventArgs
 {
-    public int mnFrameID;
-    public Mat rgbMat;
-    public ArucoMarker marker;
-    public Matrix4x4 matWorldToLocal; //슬램에서 R,t. 3차원 포인트를 카메라에 프로젝션할 때 이용
-    public Matrix4x4 matLocalToWorld; //슬램에서 inverse pose. 카메라 좌표계에서 월드 좌표계로 변경.
+    public SpatialEventArgs(Vector3 _pos, float _err)
+    {
+        pos = _pos;
+        err = _err;
+    }
+    public Vector3 pos { get; set; }
+    public float err { get; set; }
+}
+
+class SpatialEvent
+{
+    public static event EventHandler<SpatialEventArgs> spatialEvent;
+    public static void RunEvent(SpatialEventArgs e)
+    {
+        if (spatialEvent != null)
+        {
+            spatialEvent(null, e);
+        }
+    }
 }
 
 public class SpatialConsistency : MonoBehaviour
@@ -22,8 +36,7 @@ public class SpatialConsistency : MonoBehaviour
 
     StreamWriter writer_uvr;
     StreamWriter writer_google;
-
-    public Dictionary<int, ExData> mExDatas;
+    
     public Text mText;
     //public ArucoMarkerDetector mMarkerDetector;
     //public CameraManager mCamManager; //K를 얻기 위함.
@@ -57,6 +70,7 @@ public class SpatialConsistency : MonoBehaviour
         CameraInitEvent.camInitialized += OnCameraInitialization;
         ImageCatchEvent.frameReceived += OnFrameReceived;
         PlaneDetectionEvent.planeDetected += OnPlaneDetection;
+        SpatialEvent.spatialEvent += OnSpatialEvent;
         //ContentRegistrationEvent.contentRegisted += OnContentRegistration;
     }
     void OnDisable()
@@ -65,15 +79,13 @@ public class SpatialConsistency : MonoBehaviour
         CameraInitEvent.camInitialized -= OnCameraInitialization;
         ImageCatchEvent.frameReceived -= OnFrameReceived;
         PlaneDetectionEvent.planeDetected -= OnPlaneDetection;
+        SpatialEvent.spatialEvent -= OnSpatialEvent;
         //ContentRegistrationEvent.contentRegisted -= OnContentRegistration;
     }
     void Awake()
     {
         p = new Plane(Vector3.zero,0f);
-        mExDatas = new Dictionary<int, ExData>();
-        //pos3D = Vector3.zero;
-        //mParticles = new ParticleSystem.Particle[];
-
+        
         ////실험 파일
         var dirPath = Application.persistentDataPath + "/data";
         var filePath = dirPath + "/spatial_uvr.csv";
@@ -94,12 +106,24 @@ public class SpatialConsistency : MonoBehaviour
 
     }
 
+    void OnSpatialEvent(object sender, SpatialEventArgs e)
+    {
+        //서버 포즈 계산
+        if (marker == null)
+            return;
+
+        //float dist2 = marker.Calculate(e.pos, camMatrix, testPos, position, true);
+        float azi = 0f;
+        float ele = 0f;
+        float dist = 0f;
+        marker.CalculateAziAndEleAndDist(e.pos, out azi, out ele, out dist);
+        writer_uvr.WriteLine(dist + "," + azi + "," + ele + "," + e.err);
+        //mText.text = "test spatial = " + e.err;
+    }
+
     void OnFrameReceived(object sender, ImageCatchEventArgs e)
     {
-        ExData data = new ExData();
-        data.mnFrameID = e.mnFrameID;
-        data.rgbMat = e.rgbMat;
-        mExDatas.Add(e.mnFrameID,data);
+
     }
 
     void OnContentRegistration(object sender, ContentEventArgs e)
@@ -151,193 +175,35 @@ public class SpatialConsistency : MonoBehaviour
         return origin + dir * u;
     }
 
+    ArucoMarker marker = null;
+    //ARFOUNDATION 결과만 저장하도록 변경
     void OnMarkerInteraction(object sender, MarkerDetectEventArgs me)
     {
         try
         {
-            var marker = me.marker;
+            marker = me.marker;
             int id = marker.id;
             var position = marker.corners[0];
 
-            mExDatas[marker.frameId].marker = marker;
             
-            if (!marker.mbCreate)
+
+            if (!marker.mbCreate && marker.nUpdated > 10)
             {
-                Mat pos = new Mat(3, 1, CvType.CV_64FC1);
-                pos.put(0, 0, position.x);
-                pos.put(1, 0, position.y);
-                pos.put(2, 0, 1f);
-                Mat temp = invCamMatrix * pos;
-                var ptCam = new Vector3((float)temp.get(0, 0)[0], (float)temp.get(1, 0)[0], (float)temp.get(2, 0)[0]);
-
-                var toPoint = UVR.transform.localToWorldMatrix.MultiplyPoint(ptCam);
-                var dir = toPoint - UVR.transform.position;
-                dir = dir.normalized;
-                Ray ray = new Ray(UVR.transform.position, dir);
-                //var ray = temp3 - UVR.transform.position;
-                float dist = 0f;
-                bool bRay = p.Raycast(ray, out dist);
-
-                if (bRay)
-                {
-                    marker.mbCreate = true;
-                    marker.origin2 = ray.origin + ray.direction * dist;
-
-                    Vector3 ptUnity = ptCam; ptUnity.y *= -1f;
-                    ptUnity = Camera.main.transform.localToWorldMatrix.MultiplyPoint(ptUnity);
-
-                    //float aaa = p.GetDistanceToPoint(pos3D);
-                    //mText.text = "dist  " + aaa;
-                    //var pos3D2 = CreatePoint(UVR.transform.position, dir, p);
-                    Instantiate(prefabObj, ptUnity, Quaternion.identity);
-                    Instantiate(prefabObj, marker.origin, Quaternion.identity);
-                    //mText.text = pos3D.ToString() + testAA.ToString();
-                    //mText.text = ptUnity2.ToString() + " " + ptUnity.ToString();
-                }
-
+                marker.mbCreate = true;
                 marker.CreateOrigin(0.18f, fitARFoundationBackgroundMatrix, fitHelpersFlipMatrix, Camera.main.gameObject);
+
+                //Instantiate(prefabObj, marker.gameobject.transform.position, Quaternion.identity);
+                Instantiate(prefabObj, marker.origin, Quaternion.identity);
             }
-            //var pos3D = marker.origin;
-
-            if (marker.mbCreate)
-            {
-                float dist1 = marker.Calculate(UVR.transform.worldToLocalMatrix, camMatrix, marker.origin2, marker.corners[0], false);
-                float dist2 = marker.Calculate(Camera.main.transform.worldToLocalMatrix, camMatrix, marker.origin, marker.corners[0], true);
-                //var pt = UVR.transform.worldToLocalMatrix.MultiplyPoint(pos3D);
-                //Mat proj = new Mat(3, 1, CvType.CV_64FC1);
-                //proj.put(0, 0, pt.x);
-                //proj.put(1, 0, pt.y);
-                //proj.put(2, 0, pt.z);
-                //proj = camMatrix * proj;
-                //double depth = proj.get(2, 0)[0];
-                //float px = (float)(proj.get(0, 0)[0] / depth);
-                //float py = (float)(proj.get(1, 0)[0] / depth);
-                //Vector2 proj2D = new Vector2(px, py) - position;
-
+            else {
+                float dist2 = marker.Calculate(Camera.main.transform.worldToLocalMatrix, camMatrix, marker.origin, position, true);
                 float azi = 0f;
                 float ele = 0f;
                 float dist = 0f;
-                marker.CalculateAziAndEleAndDist(Camera.main.gameObject, out azi, out ele, out dist);
-                //writer_uvr.WriteLine(dist + "," + azi + "," + ele + "," + dist1);
-                //writer_google.WriteLine(dist + "," + azi + "," + ele + "," + dist2);
-                //마커의 불도 변화는지 확인
-                //mText.text = "azi = " + azi + " ele = " + ele+" dist = "+dist;
-                //mText.text += "\n dist = " + dist1 + " " + dist2 + " " + marker.mbCreate;
-                    
-                //mText.text = "ray = " + ", " + proj2D.magnitude;
-
-                //Mat rgbMat = mCamManager.rgbMat;
-                //Imgproc.circle(rgbMat, new Point(px, py), 5, new Scalar(255, 0, 255), -1);
-                //Imgproc.circle(rgbMat, new Point(position.x, position.y), 5, new Scalar(255, 0, 255), -1);
-                //Imgcodecs.imwrite(Application.persistentDataPath + "/save/a.jpg", mCamManager.rgbMat);
+                marker.CalculateAziAndEleAndDist(Camera.main.transform.position, out azi, out ele, out dist);
+                writer_google.WriteLine(dist + "," + azi + "," + ele + "," + dist2);//거리 방위 고도 에러
             }
-
-            //var ids = mMarkerDetector.mListIDs;
-            //var markers = mMarkerDetector.mDictMarkers;
-
-            //if (ids.Count > 0)
-            //{
-            //    int id = ids[0];
-            //    var marker = mMarkerDetector.GetMarker(id);
-            //    var position = marker.corners[0];
-
-            //    if (bCreate)
-            //    {
-            //        Mat pos = new Mat(3, 1, CvType.CV_64FC1);
-            //        pos.put(0, 0, position.x);
-            //        pos.put(1, 0, position.y);
-            //        pos.put(2, 0, 1f);
-            //        Mat temp = invCamMatrix * pos;
-            //        var ptCam = new Vector3((float)temp.get(0, 0)[0], (float)temp.get(1, 0)[0], (float)temp.get(2, 0)[0]);
-
-            //        var toPoint = UVR.transform.localToWorldMatrix.MultiplyPoint(ptCam);
-            //        var dir = toPoint - UVR.transform.position;
-            //        dir = dir.normalized;
-            //        Ray ray = new Ray(UVR.transform.position, dir);
-            //        //var ray = temp3 - UVR.transform.position;
-            //        float dist = 0f;
-            //        bool bRay = p.Raycast(ray, out dist);
-
-            //        if (bRay)
-            //        {
-            //            bCreate = false;
-            //            pos3D = ray.origin + ray.direction * dist;
-
-            //            Vector3 ptUnity = ptCam; ptUnity.y *= -1f;
-            //            ptUnity = Camera.main.transform.localToWorldMatrix.MultiplyPoint(ptUnity);
-
-            //            float aaa= p.GetDistanceToPoint(pos3D);
-            //            //mText.text = "dist  " + aaa;
-            //            //var pos3D2 = CreatePoint(UVR.transform.position, dir, p);
-            //            Instantiate(prefabObj, ptUnity, Quaternion.identity);
-            //            Instantiate(prefabObj, marker.origin, Quaternion.identity);
-            //            //mText.text = pos3D.ToString() + testAA.ToString();
-            //            //mText.text = ptUnity2.ToString() + " " + ptUnity.ToString();
-            //        }
-            //    }
-            //    //var pos3D = marker.origin;
-
-            //    if (!bCreate)
-            //    {
-            //        var pt = UVR.transform.worldToLocalMatrix.MultiplyPoint(pos3D);
-            //        Mat proj = new Mat(3, 1, CvType.CV_64FC1);
-            //        proj.put(0, 0, pt.x);
-            //        proj.put(1, 0, pt.y);
-            //        proj.put(2, 0, pt.z);
-            //        proj = camMatrix * proj;
-            //        double depth = proj.get(2, 0)[0];
-            //        float px = (float)(proj.get(0, 0)[0] / depth);
-            //        float py = (float)(proj.get(1, 0)[0] / depth);
-            //        Vector2 proj2D = new Vector2(px, py) - position;
-            //        //mText.text = "ray = " + ", " + proj2D.magnitude;
-
-            //        //Mat rgbMat = mCamManager.rgbMat;
-            //        //Imgproc.circle(rgbMat, new Point(px, py), 5, new Scalar(255, 0, 255), -1);
-            //        //Imgproc.circle(rgbMat, new Point(position.x, position.y), 5, new Scalar(255, 0, 255), -1);
-            //        //Imgcodecs.imwrite(Application.persistentDataPath + "/save/a.jpg", mCamManager.rgbMat);
-            //    }
-               
-            //    //if (bRay)
-            //    //{
-                    
-
-            //    //    if (bCreate)
-            //    //    {
-                        
-                        
-            //    //    }
-
-            //    //    if (!bCreate)
-            //    //    {
-                        
-            //    //    }
-
-            //    //}
-            //    //else
-            //    //    mText.text = "ray fail";
-
-
-            //    //mText.text = "temp3 = " + temp3.ToString() + " "+ UVR.transform.position();
-
-            //    //List<ARRaycastHit> aRRaycastHits = new List<ARRaycastHit>();
-            //    //if (arRaycastManager.Raycast(position, aRRaycastHits) && aRRaycastHits.Count > 0)
-            //    //{
-            //    //    ARRaycastHit hit = aRRaycastHits[0];
-            //    //    //mText.text = position + " "+mMarkerDetector.corner3Ds[0].ToString();
-            //    //    if (hit.trackable is ARPlane plane)
-            //    //    {
-            //    //        //localAnchor = anchorManager.AddAnchor(hits[0].pose);
-            //    //        var anchorGameObject = Instantiate(AnchoredObjectPrefab, pos3D, hit.pose.rotation);
-            //    //        //mText.text = "created " + pos3D;
-            //    //    }
-
-            //    //}
-            //    //mText.text = "marekr event " + id + " " + pos3D;
-            //}
-            //else
-            //    mText.text = "123123adsfasdfasdfasdf";
-
-            //mText.text = "marekr event";
+            
         }
         catch (Exception e)
         {

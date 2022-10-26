@@ -7,6 +7,7 @@ using System.IO;
 using UnityEngine;
 using UnityEngine.UI;
 
+
 public class TestManager : MonoBehaviour
 {
     //public CameraManager mCamManager;
@@ -30,34 +31,38 @@ public class TestManager : MonoBehaviour
     {
         ImageCatchEvent.frameReceived += OnCameraFrameReceived;
         PointCloudUpdateEvent.pointCloudUpdated += OnPointUpdated;
-        MarkerDetectEvent.markerDetected += OnMarkerInteraction;
+        MarkerDetectEvent2.markerDetected += OnMarkerInteraction2;
     }
 
     void OnDisable()
     {
         ImageCatchEvent.frameReceived -= OnCameraFrameReceived;
         PointCloudUpdateEvent.pointCloudUpdated -= OnPointUpdated;
-        MarkerDetectEvent.markerDetected -= OnMarkerInteraction;
-    }
-    ArucoMarker tempMarker;
-    void OnMarkerInteraction(object sender, MarkerDetectEventArgs me)
-    {
-        try
-        {
-            tempMarker = me.marker;
-            var marker = me.marker;
-            int id = marker.id;
-            var position = marker.corners[0];
-
-        }
-        catch (Exception e)
-        {
-            mText.text = e.ToString();
-        }
+        MarkerDetectEvent2.markerDetected -= OnMarkerInteraction2;
     }
 
     List<Vector3> points;
     int mnPoints;
+
+    MarkerDetectEventArgs2 ae = null;
+
+    void OnMarkerInteraction2(object sender, MarkerDetectEventArgs2 e)
+    {
+        if(e.mnFrameID % mnSkipFrame != 0)
+            return;
+        ae = e;
+        
+        //byte[] bdata = new byte[e.marker_data.Length * 4];
+        //Buffer.BlockCopy(e.marker_data, 0, bdata, 0, bdata.Length); //전체 실수형 데이터 수
+        //UdpData mdata = new UdpData("MarkerResults", mSystemManager.User.UserName, e.mnFrameID, bdata, 1.0);
+        //StartCoroutine(mSender.SendData(mdata));
+
+        //mText.text = "send marker data = " + bdata.Length + " " + e.marker_data[0];
+        //2차원 마커 포지션, 카메라 위치, 서버에서 디스턴스 받으면 저장.
+        //Camera.main.transform.position;
+    }
+
+    ////마커 전송할 때의 아이디 기록
 
     void OnPointUpdated(object sender, PointCloudUpdateEventArgs e)
     {
@@ -129,7 +134,7 @@ public class TestManager : MonoBehaviour
                         fmapdata[idx++] = -res.y;
                         fmapdata[idx++] = res.z;
                     }
-                    float[] dataIdx = new float[4];
+                    float[] dataIdx = new float[1];
                     byte[] bmapdata = new byte[(fposedata.Length+ fmapdata.Length + dataIdx.Length) * 4+bImgData.Length]; //이차원 위치 추가
                     
                     int nPoseSize = fposedata.Length * 4;
@@ -137,9 +142,9 @@ public class TestManager : MonoBehaviour
                     int nDataSize = dataIdx.Length*4;
 
                     dataIdx[0] = (float)(nPoseSize + nMapSize + nDataSize);
-                    dataIdx[1] = tempMarker.id;
-                    dataIdx[2] = tempMarker.corners[0].x;
-                    dataIdx[3] = tempMarker.corners[0].y;
+                    //dataIdx[1] = tempMarker.id;
+                    //dataIdx[2] = tempMarker.corners[0].x;
+                    //dataIdx[3] = tempMarker.corners[0].y;
 
                     Buffer.BlockCopy(dataIdx,   0, bmapdata, 0, nDataSize); //전체 실수형 데이터 수
                     Buffer.BlockCopy(fposedata, 0, bmapdata, nDataSize, nPoseSize); // 포즈 정보, 12개
@@ -150,6 +155,19 @@ public class TestManager : MonoBehaviour
                     StartCoroutine(mSender.SendData(mdata));
                     //mText.text = "\t\t\tPointCloudManager = " + mTestManager.mnFrame + " " + mSystemManager.User.UserName+" "+m_NumParticles;
                     //changed = false;
+
+                    //byte[] bdata = new byte[ae.marker_data.Length * 4];
+                    //Buffer.BlockCopy(ae.marker_data, 0, bdata, 0, bdata.Length); //전체 실수형 데이터 수
+                    //UdpData madata = new UdpData("MarkerResults", mSystemManager.User.UserName, frameID, bdata, 1.0);
+                    //StartCoroutine(mSender.SendData(madata));
+
+                    if (ae != null && ae.mnFrameID == frameID) {
+                        byte[] bamdata = new byte[ae.marker_data.Length * 4];
+                        Buffer.BlockCopy(ae.marker_data, 0, bamdata, 0, bamdata.Length); //전체 실수형 데이터 수
+                        UdpData amdata = new UdpData("MarkerResults", mSystemManager.User.UserName, e.mnFrameID, bamdata, 1.0);
+                        StartCoroutine(mSender.SendData(amdata));
+                    }
+
                 }
             }
         }

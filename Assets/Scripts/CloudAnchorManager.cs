@@ -96,7 +96,7 @@ public class CloudAnchorManager : MonoBehaviour
                 float azi = 0f;
                 float ele = 0f;
                 float dist = 0f;
-                marker.CalculateAziAndEleAndDist(Camera.main.gameObject, out azi, out ele, out dist);
+                marker.CalculateAziAndEleAndDist(Camera.main.transform.position, out azi, out ele, out dist);
                 float dist2 = marker.Calculate(Camera.main.transform.worldToLocalMatrix, camMatrix, anchorGameObject.transform.position, marker.corners[0], true);
                 if(dist2 < 1000f)
                     writer_spatial.WriteLine(dist + "," + azi + "," + ele + "," + dist2);
@@ -133,7 +133,10 @@ public class CloudAnchorManager : MonoBehaviour
             //        //if (raycastManager.Raycast(position, aRRaycastHits) && aRRaycastHits.Count > 0)
             //        //{
             //        //    ARRaycastHit hit = aRRaycastHits[0];
-            //        //    if (hit.trackable is ARPlane plane)
+            //        //    if (hit.
+            //
+            //
+            //        able is ARPlane plane)
             //        //    {
 
 
@@ -282,7 +285,6 @@ public class CloudAnchorManager : MonoBehaviour
         startTime = DateTime.Now;
 
         cloudAnchor = anchorManager.ResolveCloudAnchorId(strCloudAnchorId);
-                
         messageText.text = $"{strCloudAnchorId} Å×½ºÆ®";
         if (cloudAnchor == null)
         {

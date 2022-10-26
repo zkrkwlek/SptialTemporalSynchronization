@@ -97,7 +97,7 @@ public class PlaneManager : MonoBehaviour
     List<UVR_Plane> Planes;
 
     // Start is called before the first frame update
-    void Start()
+    void Awake()
     {
         //Planes = new Dictionary<int, UVR_Plane>();
         Planes = new List<UVR_Plane>();
